@@ -181,10 +181,6 @@ class StagehandPage:
                     self, self._stagehand, "", self._stagehand.self_heal
                 )
             self._stagehand.logger.debug("act", category="act", auxiliary=payload)
-            if payload.get("iframes"):
-                raise ValueError(
-                    "iframes is not yet supported without API (to enable make sure you set env=BROWSERBASE and use_api=true)"
-                )
             result = await self._act_handler.act(payload)
             return result
 

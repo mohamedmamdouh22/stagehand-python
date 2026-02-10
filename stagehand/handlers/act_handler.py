@@ -69,6 +69,8 @@ class ActHandler:
             observe_options_dict["model_client_options"] = options.get(
                 "model_client_options"
             )
+        if options.get("iframes"):
+            observe_options_dict["iframes"] = options.get("iframes")
 
         observe_options = ObserveOptions(**observe_options_dict)
 

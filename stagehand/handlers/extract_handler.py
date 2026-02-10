@@ -90,7 +90,8 @@ class ExtractHandler:
         # )
 
         # Get accessibility tree data
-        tree = await get_accessibility_tree(self.stagehand_page, self.logger)
+        include_iframes = options.iframes if options.iframes else False
+        tree = await get_accessibility_tree(self.stagehand_page, self.logger, include_iframes=include_iframes)
         self.logger.info("Getting accessibility tree data")
         output_string = tree["simplified"]
         id_to_url_mapping = tree.get("idToUrl", {})

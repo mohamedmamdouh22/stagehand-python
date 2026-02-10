@@ -129,6 +129,7 @@ async def build_hierarchical_tree(
     nodes: list[AXNode],
     page: Optional["StagehandPage"],
     logger: Optional[StagehandLogger],
+    include_iframes: bool = False,
 ) -> TreeResult:
     """Builds a hierarchical tree structure from a flat array of accessibility nodes."""
     id_to_url: dict[str, str] = {}
@@ -226,6 +227,7 @@ async def build_hierarchical_tree(
 async def get_accessibility_tree(
     page: "StagehandPage",
     logger: StagehandLogger,
+    include_iframes: bool = False,
 ) -> TreeResult:
     """Retrieves the full accessibility tree via CDP and transforms it."""
     try:
@@ -254,7 +256,7 @@ async def get_accessibility_tree(
                         "value": new_role,
                     }  # Create role if missing
 
-        hierarchical_tree = await build_hierarchical_tree(nodes, page, logger)
+        hierarchical_tree = await build_hierarchical_tree(nodes, page, logger, include_iframes=include_iframes)
 
         end_time = time.time()
         # Use logger.debug
