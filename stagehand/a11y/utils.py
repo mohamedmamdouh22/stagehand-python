@@ -225,6 +225,28 @@ async def _extract_iframe_content(
 
                 iframe_content = iframe_tree_result.get("tree", [])
                 if iframe_content:
+                    # Get iframe's xpath to mark the content
+                    try:
+                        iframe_resolved = await page.send_cdp(
+                            "DOM.resolveNode",
+                            {"backendNodeId": backend_node_id}
+                        )
+                        iframe_obj_id = iframe_resolved.get("object", {}).get("objectId")
+                        if iframe_obj_id:
+                            cdp_client = await page.get_cdp_client()
+                            iframe_xpath = await get_xpath_by_resolved_object_id(cdp_client, iframe_obj_id)
+                            if iframe_xpath:
+                                # Mark all nodes recursively with iframe xpath
+                                def mark_nodes_recursive(nodes):
+                                    for node in nodes:
+                                        node["_iframe_xpath"] = iframe_xpath
+                                        if "children" in node and node["children"]:
+                                            mark_nodes_recursive(node["children"])
+
+                                mark_nodes_recursive(iframe_content)
+                    except Exception:
+                        pass
+
                     return iframe_content
 
             except Exception:
@@ -276,7 +298,31 @@ async def _extract_iframe_content(
             include_iframes=False  # Prevent infinite recursion
         )
 
-        return iframe_tree_result.get("tree", [])
+        iframe_content = iframe_tree_result.get("tree", [])
+        if iframe_content:
+            # Get iframe's xpath to mark the content (same as frame enumeration path)
+            try:
+                iframe_resolved = await page.send_cdp(
+                    "DOM.resolveNode",
+                    {"backendNodeId": backend_node_id}
+                )
+                iframe_obj_id = iframe_resolved.get("object", {}).get("objectId")
+                if iframe_obj_id:
+                    cdp_client = await page.get_cdp_client()
+                    iframe_xpath = await get_xpath_by_resolved_object_id(cdp_client, iframe_obj_id)
+                    if iframe_xpath:
+                        # Mark all nodes recursively with iframe xpath
+                        def mark_nodes_recursive(nodes):
+                            for node in nodes:
+                                node["_iframe_xpath"] = iframe_xpath
+                                if "children" in node and node["children"]:
+                                    mark_nodes_recursive(node["children"])
+
+                        mark_nodes_recursive(iframe_content)
+            except Exception:
+                pass
+
+        return iframe_content
 
     except Exception as e:
         if logger:

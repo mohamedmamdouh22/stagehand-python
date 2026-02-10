@@ -98,20 +98,25 @@ class ObserveHandler:
             function_name, prompt_tokens, completion_tokens, inference_time_ms
         )
 
-        # Add iframes to the response if any
+        # Add iframes to the response if any (but only if iframes param is not enabled)
+        # When iframes=True, the iframe content is already in the tree, so we don't need standalone iframe elements
         elements = observation_response.get("elements", [])
-        for iframe in iframes:
-            elements.append(
-                {
-                    "element_id": int(iframe.get("nodeId", 0)),
-                    "description": "an iframe",
-                    "method": "not-supported",
-                    "arguments": [],
-                }
-            )
+        if not include_iframes:
+            for iframe in iframes:
+                elements.append(
+                    {
+                        "element_id": int(iframe.get("nodeId", 0)),
+                        "description": "an iframe",
+                        "method": "not-supported",
+                        "arguments": [],
+                    }
+                )
+
+        # Create flat map of tree nodes for quick lookup of iframe metadata
+        tree_node_map = self._flatten_tree_to_map(tree.get("tree", []))
 
         # Generate selectors for all elements
-        elements_with_selectors = await self._add_selectors_to_elements(elements)
+        elements_with_selectors = await self._add_selectors_to_elements(elements, tree_node_map)
 
         self.logger.debug(
             "Found elements", auxiliary={"elements": elements_with_selectors}
@@ -127,19 +132,49 @@ class ObserveHandler:
         # Return the list of results without trying to attach _llm_response
         return elements_with_selectors
 
+    def _flatten_tree_to_map(self, tree_nodes: list[dict]) -> dict[int, dict]:
+        """
+        Flatten tree structure into a map of backendDOMNodeId -> node for quick lookup.
+
+        Args:
+            tree_nodes: List of tree nodes from get_accessibility_tree
+
+        Returns:
+            Dictionary mapping backendDOMNodeId to node data
+        """
+        node_map = {}
+
+        def traverse(nodes):
+            for node in nodes:
+                # Use backendDOMNodeId as key (this matches element_id from LLM)
+                backend_node_id = node.get("backendDOMNodeId")
+                if backend_node_id:
+                    node_map[int(backend_node_id)] = node
+                # Recursively traverse children
+                if "children" in node and node["children"]:
+                    traverse(node["children"])
+
+        traverse(tree_nodes)
+        return node_map
+
     async def _add_selectors_to_elements(
         self,
         elements: list[dict[str, Any]],
+        tree_node_map: dict[int, dict] = None,
     ) -> list[ObserveResult]:
         """
         Add selectors to elements based on their element IDs.
 
         Args:
             elements: list of elements from LLM response
+            tree_node_map: Optional map of nodeId -> node for iframe metadata lookup
 
         Returns:
             list of elements with selectors added (xpaths)
         """
+        if tree_node_map is None:
+            tree_node_map = {}
+
         result = []
 
         for element in elements:
@@ -170,6 +205,15 @@ class ObserveHandler:
                 self.logger.info(f"Empty xpath returned for element: {element_id}")
                 continue
 
-            result.append(ObserveResult(**{**rest, "selector": f"xpath={xpath}"}))
+            # Check if this element came from inside an iframe
+            node_data = tree_node_map.get(element_id)
+            if node_data and "_iframe_xpath" in node_data:
+                # Combine iframe xpath with element xpath
+                iframe_xpath = node_data["_iframe_xpath"]
+                combined_xpath = f"{iframe_xpath}{xpath}"
+                result.append(ObserveResult(**{**rest, "selector": f"xpath={combined_xpath}"}))
+            else:
+                # Regular element (not inside iframe)
+                result.append(ObserveResult(**{**rest, "selector": f"xpath={xpath}"}))
 
         return result
