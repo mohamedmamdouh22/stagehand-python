@@ -142,6 +142,9 @@ async def _extract_iframe_content(
         List of accessibility nodes from inside the iframe, or empty list on failure
     """
     try:
+        if logger:
+            logger.info(f"🔍 Attempting to extract iframe content for node {backend_node_id}")
+
         # Step 1: Resolve backend node ID to object ID
         resolved = await page.send_cdp(
             "DOM.resolveNode",
@@ -149,7 +152,12 @@ async def _extract_iframe_content(
         )
         object_id = resolved.get("object", {}).get("objectId")
         if not object_id:
+            if logger:
+                logger.info("❌ No object ID returned from DOM.resolveNode")
             return []
+
+        if logger:
+            logger.info(f"✓ Resolved object ID: {object_id}")
 
         # Step 2: Get the contentDocument of the iframe
         content_doc_result = await page.send_cdp(
@@ -165,8 +173,11 @@ async def _extract_iframe_content(
         if not content_doc_object_id:
             # Cross-origin iframe - cannot access content
             if logger:
-                logger.debug("Cannot access iframe content (cross-origin restriction)")
+                logger.info("❌ Cannot access iframe content (cross-origin restriction or null contentDocument)")
             return []
+
+        if logger:
+            logger.info(f"✓ Got contentDocument object ID: {content_doc_object_id}")
 
         # Step 3: Get backend node ID of iframe's document
         doc_node_result = await page.send_cdp(
@@ -175,7 +186,12 @@ async def _extract_iframe_content(
         )
         iframe_backend_node_id = doc_node_result.get("node", {}).get("backendNodeId")
         if not iframe_backend_node_id:
+            if logger:
+                logger.info("❌ No backend node ID for iframe document")
             return []
+
+        if logger:
+            logger.info(f"✓ Got iframe document backend node ID: {iframe_backend_node_id}")
 
         # Step 4: Get accessibility tree for iframe content
         iframe_ax_result = await page.send_cdp(
@@ -188,7 +204,12 @@ async def _extract_iframe_content(
 
         iframe_nodes = iframe_ax_result.get("nodes", [])
         if not iframe_nodes:
+            if logger:
+                logger.info("❌ No accessibility nodes returned for iframe")
             return []
+
+        if logger:
+            logger.info(f"✓ Got {len(iframe_nodes)} accessibility nodes from iframe")
 
         # Step 5: Build tree from iframe nodes (prevent nested iframe recursion)
         iframe_tree_result = await build_hierarchical_tree(
@@ -198,11 +219,17 @@ async def _extract_iframe_content(
             include_iframes=False  # Prevent infinite recursion
         )
 
-        return iframe_tree_result.get("tree", [])
+        iframe_content = iframe_tree_result.get("tree", [])
+        if logger:
+            logger.info(f"✅ Successfully extracted {len(iframe_content)} elements from iframe")
+
+        return iframe_content
 
     except Exception as e:
         if logger:
-            logger.debug(f"Error extracting iframe content: {e}")
+            logger.info(f"❌ Error extracting iframe content: {e}")
+            import traceback
+            logger.info(f"Traceback: {traceback.format_exc()}")
         return []
 
 
