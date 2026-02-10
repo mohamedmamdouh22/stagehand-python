@@ -125,6 +125,87 @@ def _extract_url_from_ax_node(
     return None
 
 
+async def _extract_iframe_content(
+    page: "StagehandPage",
+    backend_node_id: int,
+    logger: Optional[StagehandLogger],
+) -> list[AccessibilityNode]:
+    """
+    Extract accessibility tree content from an iframe.
+
+    Args:
+        page: The StagehandPage containing the iframe
+        backend_node_id: Backend DOM node ID of the iframe element
+        logger: Logger for debugging
+
+    Returns:
+        List of accessibility nodes from inside the iframe, or empty list on failure
+    """
+    try:
+        # Step 1: Resolve backend node ID to object ID
+        resolved = await page.send_cdp(
+            "DOM.resolveNode",
+            {"backendNodeId": backend_node_id}
+        )
+        object_id = resolved.get("object", {}).get("objectId")
+        if not object_id:
+            return []
+
+        # Step 2: Get the contentDocument of the iframe
+        content_doc_result = await page.send_cdp(
+            "Runtime.callFunctionOn",
+            {
+                "objectId": object_id,
+                "functionDeclaration": "function() { return this.contentDocument; }",
+                "returnByValue": False,
+            }
+        )
+
+        content_doc_object_id = content_doc_result.get("result", {}).get("objectId")
+        if not content_doc_object_id:
+            # Cross-origin iframe - cannot access content
+            if logger:
+                logger.debug("Cannot access iframe content (cross-origin restriction)")
+            return []
+
+        # Step 3: Get backend node ID of iframe's document
+        doc_node_result = await page.send_cdp(
+            "DOM.describeNode",
+            {"objectId": content_doc_object_id}
+        )
+        iframe_backend_node_id = doc_node_result.get("node", {}).get("backendNodeId")
+        if not iframe_backend_node_id:
+            return []
+
+        # Step 4: Get accessibility tree for iframe content
+        iframe_ax_result = await page.send_cdp(
+            "Accessibility.queryAXTree",
+            {
+                "backendNodeId": iframe_backend_node_id,
+                "fetchRelatives": True
+            }
+        )
+
+        iframe_nodes = iframe_ax_result.get("nodes", [])
+        if not iframe_nodes:
+            return []
+
+        # Step 5: Build tree from iframe nodes (prevent nested iframe recursion)
+        iframe_tree_result = await build_hierarchical_tree(
+            iframe_nodes,
+            page,
+            logger,
+            include_iframes=False  # Prevent infinite recursion
+        )
+
+        return iframe_tree_result.get("tree", [])
+
+    except Exception as e:
+        if logger:
+            logger.debug(f"Error extracting iframe content: {e}")
+        return []
+
+
 async def build_hierarchical_tree(
     nodes: list[AXNode],
     page: Optional["StagehandPage"],
@@ -195,6 +276,22 @@ async def build_hierarchical_tree(
         # Add iframes to list
         if node.get("role") == "Iframe":
             iframe_list.append({"role": "Iframe", "nodeId": node_id})
+
+            # Extract iframe content if requested
+            if include_iframes and page:
+                try:
+                    backend_node_id = node.get("backendDOMNodeId")
+                    if backend_node_id:
+                        iframe_content = await _extract_iframe_content(
+                            page, backend_node_id, logger
+                        )
+                        if iframe_content:
+                            if "children" not in node:
+                                node["children"] = []
+                            node["children"].extend(iframe_content)
+                except Exception as e:
+                    if logger:
+                        logger.debug(f"Failed to extract iframe content for node {node_id}: {e}")
 
         if parent_id and parent_id in node_map:
             parent_node = node_map[parent_id]
