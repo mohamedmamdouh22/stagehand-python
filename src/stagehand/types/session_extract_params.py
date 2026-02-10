@@ -40,6 +40,9 @@ class Options(TypedDict, total=False):
     timeout: float
     """Timeout in ms for the extraction"""
 
+    iframes: bool
+    """Whether to include iframe content in the accessibility tree"""
+
 
 class SessionExtractParamsNonStreaming(SessionExtractParamsBase, total=False):
     stream_response: Annotated[Literal[False], PropertyInfo(alias="streamResponse")]

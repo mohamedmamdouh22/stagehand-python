@@ -47,6 +47,9 @@ class Options(TypedDict, total=False):
     variables: Dict[str, str]
     """Variables to substitute in the action instruction"""
 
+    iframes: bool
+    """Whether to include iframe content in the accessibility tree"""
+
 
 class SessionActParamsNonStreaming(SessionActParamsBase, total=False):
     stream_response: Annotated[Literal[False], PropertyInfo(alias="streamResponse")]
