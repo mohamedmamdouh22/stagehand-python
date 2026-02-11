@@ -144,8 +144,7 @@ async def _find_frame_id_for_iframe_element(
     try:
         # Get the iframe element's object ID
         resolved = await page.send_cdp(
-            "DOM.resolveNode",
-            {"backendNodeId": iframe_backend_node_id}
+            "DOM.resolveNode", {"backendNodeId": iframe_backend_node_id}
         )
         object_id = resolved.get("object", {}).get("objectId")
         if not object_id:
@@ -158,14 +157,16 @@ async def _find_frame_id_for_iframe_element(
                 "objectId": object_id,
                 "functionDeclaration": "function() { try { return this.contentWindow; } catch(e) { return null; } }",
                 "returnByValue": False,
-            }
+            },
         )
 
         content_window_obj_id = content_window_result.get("result", {}).get("objectId")
         if not content_window_obj_id:
             # For cross-origin iframes, we can't access contentWindow directly
             # Fall back to matching by comparing frame tree structure
-            return await _match_frame_by_tree_position(page, iframe_backend_node_id, logger)
+            return await _match_frame_by_tree_position(
+                page, iframe_backend_node_id, logger
+            )
 
         # Get the execution context for this window
         contexts_result = await page.send_cdp("Runtime.getExecutionContexts")
@@ -173,7 +174,9 @@ async def _find_frame_id_for_iframe_element(
 
         # Find the context that matches our contentWindow
         for context in contexts:
-            if context.get("auxData", {}).get("isDefault") and context.get("auxData", {}).get("frameId"):
+            if context.get("auxData", {}).get("isDefault") and context.get(
+                "auxData", {}
+            ).get("frameId"):
                 # Check if this context belongs to our window
                 try:
                     context_window = await page.send_cdp(
@@ -181,10 +184,12 @@ async def _find_frame_id_for_iframe_element(
                         {
                             "expression": "window",
                             "returnByValue": False,
-                            "contextId": context["id"]
-                        }
+                            "contextId": context["id"],
+                        },
                     )
-                    context_window_obj = context_window.get("result", {}).get("objectId")
+                    context_window_obj = context_window.get("result", {}).get(
+                        "objectId"
+                    )
 
                     if context_window_obj == content_window_obj_id:
                         return context["auxData"]["frameId"]
@@ -223,6 +228,7 @@ async def _match_frame_by_tree_position(
 
         # Collect all child frames
         all_frames = []
+
         def collect_frames(tree, depth=0):
             frame = tree.get("frame")
             if frame:
@@ -237,8 +243,7 @@ async def _match_frame_by_tree_position(
 
         # Search for all iframe elements
         iframe_search = await page.send_cdp(
-            "DOM.performSearch",
-            {"query": "iframe", "includeUserAgentShadowDOM": True}
+            "DOM.performSearch", {"query": "iframe", "includeUserAgentShadowDOM": True}
         )
 
         search_id = iframe_search.get("searchId")
@@ -248,7 +253,7 @@ async def _match_frame_by_tree_position(
             # Get search results
             search_results = await page.send_cdp(
                 "DOM.getSearchResults",
-                {"searchId": search_id, "fromIndex": 0, "toIndex": result_count}
+                {"searchId": search_id, "fromIndex": 0, "toIndex": result_count},
             )
 
             iframe_node_ids = search_results.get("nodeIds", [])
@@ -305,11 +310,15 @@ async def _extract_iframe_content(
     """
     try:
         # Step 1: Find the frame ID for this iframe element
-        frame_id = await _find_frame_id_for_iframe_element(page, backend_node_id, logger)
+        frame_id = await _find_frame_id_for_iframe_element(
+            page, backend_node_id, logger
+        )
 
         if not frame_id:
             if logger:
-                logger.debug(f"Could not find frame ID for iframe with backend node {backend_node_id}")
+                logger.debug(
+                    f"Could not find frame ID for iframe with backend node {backend_node_id}"
+                )
             return []
 
         if logger:
@@ -337,8 +346,8 @@ async def _extract_iframe_content(
             {
                 "expression": "document",
                 "returnByValue": False,
-                "contextId": frame_context_id
-            }
+                "contextId": frame_context_id,
+            },
         )
 
         doc_object_id = doc_result.get("result", {}).get("objectId")
@@ -349,8 +358,7 @@ async def _extract_iframe_content(
 
         # Step 4: Get the backend node ID for the frame's document
         doc_node_result = await page.send_cdp(
-            "DOM.describeNode",
-            {"objectId": doc_object_id}
+            "DOM.describeNode", {"objectId": doc_object_id}
         )
 
         frame_doc_backend_id = doc_node_result.get("node", {}).get("backendNodeId")
@@ -362,10 +370,7 @@ async def _extract_iframe_content(
         # Step 5: Get accessibility tree for the iframe content
         iframe_ax_result = await page.send_cdp(
             "Accessibility.queryAXTree",
-            {
-                "backendNodeId": frame_doc_backend_id,
-                "fetchRelatives": True
-            }
+            {"backendNodeId": frame_doc_backend_id, "fetchRelatives": True},
         )
 
         iframe_nodes = iframe_ax_result.get("nodes", [])
@@ -379,7 +384,7 @@ async def _extract_iframe_content(
             iframe_nodes,
             page,
             logger,
-            include_iframes=False  # Prevent infinite recursion
+            include_iframes=False,  # Prevent infinite recursion
         )
 
         iframe_content = iframe_tree_result.get("tree", [])
@@ -388,13 +393,14 @@ async def _extract_iframe_content(
         if iframe_content:
             try:
                 iframe_resolved = await page.send_cdp(
-                    "DOM.resolveNode",
-                    {"backendNodeId": backend_node_id}
+                    "DOM.resolveNode", {"backendNodeId": backend_node_id}
                 )
                 iframe_obj_id = iframe_resolved.get("object", {}).get("objectId")
                 if iframe_obj_id:
                     cdp_client = await page.get_cdp_client()
-                    iframe_xpath = await get_xpath_by_resolved_object_id(cdp_client, iframe_obj_id)
+                    iframe_xpath = await get_xpath_by_resolved_object_id(
+                        cdp_client, iframe_obj_id
+                    )
                     if iframe_xpath:
                         # Mark all nodes recursively with iframe xpath
                         def mark_nodes_recursive(nodes):
@@ -406,7 +412,9 @@ async def _extract_iframe_content(
                         mark_nodes_recursive(iframe_content)
 
                         if logger:
-                            logger.debug(f"Successfully extracted {len(iframe_content)} nodes from iframe at {iframe_xpath}")
+                            logger.debug(
+                                f"Successfully extracted {len(iframe_content)} nodes from iframe at {iframe_xpath}"
+                            )
             except Exception as xpath_error:
                 if logger:
                     logger.debug(f"Could not get xpath for iframe: {xpath_error}")
@@ -504,7 +512,9 @@ async def build_hierarchical_tree(
                             node["children"].extend(iframe_content)
                 except Exception as e:
                     if logger:
-                        logger.debug(f"Failed to extract iframe content for node {node_id}: {e}")
+                        logger.debug(
+                            f"Failed to extract iframe content for node {node_id}: {e}"
+                        )
 
         if parent_id and parent_id in node_map:
             parent_node = node_map[parent_id]
@@ -566,7 +576,9 @@ async def get_accessibility_tree(
                         "value": new_role,
                     }  # Create role if missing
 
-        hierarchical_tree = await build_hierarchical_tree(nodes, page, logger, include_iframes=include_iframes)
+        hierarchical_tree = await build_hierarchical_tree(
+            nodes, page, logger, include_iframes=include_iframes
+        )
 
         end_time = time.time()
         # Use logger.debug
